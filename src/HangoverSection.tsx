@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Checkbox, Group, NumberInput, Paper, SimpleGrid, Text } from '@mantine/core'
-import {
-  AVG_DAYS_PER_MONTH,
-  computeHangoverMetrics,
-  HANGOVER_TOPIC,
-  hangoverDotsFromMetrics,
-  type HangoverPaint,
-} from './hangoverEstimate'
+import { AVG_DAYS_PER_MONTH, computeHangoverMetrics, HANGOVER_TOPIC, hangoverDotsFromMetrics, type HangoverPaint } from './hangoverEstimate'
 
 type Props = {
   remainingDots: number
@@ -25,20 +19,20 @@ export function HangoverSection(props: Props) {
   const { remainingDots, totalDots, timelineDisabled, onPaintChange } = props
 
   const [modelOn, setModelOn] = useState(false)
-  const [drinkingDaysPm, setDrinkingDaysPm] = useState(8)
-  const [lostPerDrinkDay, setLostPerDrinkDay] = useState(0.35)
+  const [drinkingDaysPm, setDrinkingDaysPm] = useState(4)
+  const [lostPerDrinkDay, setLostPerDrinkDay] = useState(0.5)
 
   const metrics = useMemo(
     () =>
       computeHangoverMetrics(
         {
           drinkingDaysPerMonth: drinkingDaysPm,
-          avgDaysLostPerDrinkDay: lostPerDrinkDay,
+          avgDaysLostPerDrinkDay: lostPerDrinkDay
         },
         remainingDots,
-        totalDots,
+        totalDots
       ),
-    [drinkingDaysPm, lostPerDrinkDay, remainingDots, totalDots],
+    [drinkingDaysPm, lostPerDrinkDay, remainingDots, totalDots]
   )
 
   useEffect(() => {
@@ -46,23 +40,11 @@ export function HangoverSection(props: Props) {
       onPaintChange({ active: false, dotCount: 0 })
       return
     }
-    const dots = hangoverDotsFromMetrics(
-      metrics.equivalentDotMonthsAcrossRemaining,
-      remainingDots,
-    )
+    const dots = hangoverDotsFromMetrics(metrics.equivalentDotMonthsAcrossRemaining, remainingDots)
     onPaintChange({ active: true, dotCount: dots })
-  }, [
-    timelineDisabled,
-    modelOn,
-    metrics.equivalentDotMonthsAcrossRemaining,
-    remainingDots,
-    onPaintChange,
-  ])
+  }, [timelineDisabled, modelOn, metrics.equivalentDotMonthsAcrossRemaining, remainingDots, onPaintChange])
 
-  const roundedDots = hangoverDotsFromMetrics(
-    metrics.equivalentDotMonthsAcrossRemaining,
-    remainingDots,
-  )
+  const roundedDots = hangoverDotsFromMetrics(metrics.equivalentDotMonthsAcrossRemaining, remainingDots)
 
   return (
     <Paper shadow="xs" radius="md" withBorder p="xs">
@@ -75,47 +57,16 @@ export function HangoverSection(props: Props) {
         </Text>
       ) : (
         <>
-          <Checkbox
-            checked={modelOn}
-            size="xs"
-            label="Show downtime as rose months at end of timeline"
-            onChange={(e) => setModelOn(e.currentTarget.checked)}
-            mb="xs"
-          />
+          <Checkbox checked={modelOn} size="xs" label="Show downtime as rose months at end of timeline" onChange={(e) => setModelOn(e.currentTarget.checked)} mb="xs" />
           {!modelOn ? (
             <Text size="xs" c="dimmed" lh={1.4}>
-              Estimates impairment days/month, then paints that many upcoming
-              month-dots rose at the right of the grid (not medical advice).
+              Estimates impairment days/month, then paints that many upcoming month-dots rose at the right of the grid (not medical advice).
             </Text>
           ) : (
             <>
               <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="xs" mb="xs">
-                <NumberInput
-                  size="xs"
-                  label="Drink days / mo"
-                  min={0}
-                  max={31}
-                  step={1}
-                  clampBehavior="strict"
-                  value={drinkingDaysPm}
-                  onChange={(v) =>
-                    setDrinkingDaysPm(numOr(v, drinkingDaysPm))
-                  }
-                />
-                <NumberInput
-                  size="xs"
-                  label="Days lost / drink day (avg)"
-                  description="Fractions ok · impairing days averaged per drinking day."
-                  min={0}
-                  max={14}
-                  step={0.05}
-                  clampBehavior="strict"
-                  decimalScale={2}
-                  value={lostPerDrinkDay}
-                  onChange={(v) =>
-                    setLostPerDrinkDay(numOr(v, lostPerDrinkDay))
-                  }
-                />
+                <NumberInput size="xs" label="Drink days / mo" min={0} max={31} step={1} clampBehavior="strict" value={drinkingDaysPm} onChange={(v) => setDrinkingDaysPm(numOr(v, drinkingDaysPm))} />
+                <NumberInput size="xs" label="Days lost / drink day (avg)" description="Fractions ok · impairing days averaged per drinking day." min={0} max={14} step={0.05} clampBehavior="strict" decimalScale={2} value={lostPerDrinkDay} onChange={(v) => setLostPerDrinkDay(numOr(v, lostPerDrinkDay))} />
               </SimpleGrid>
               <Group justify="space-between" gap="xs" wrap="wrap">
                 <Text size="xs" c="dimmed">
