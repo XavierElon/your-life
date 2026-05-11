@@ -65,7 +65,11 @@ function formatMonthLabel(d: Date): string {
 
 function App() {
   const [birthInput, setBirthInput] = useState('1990-01-01')
-  const [cohortHover, setCohortHover] = useState<CohortHover | null>(null)
+  /** From grid dots only; cleared when pointer leaves the month grid */
+  const [dotHoverCohort, setDotHoverCohort] = useState<CohortHover | null>(null)
+  /** From legend row clicks only; toggle same row to clear */
+  const [legendPinCohort, setLegendPinCohort] =
+    useState<CohortHover | null>(null)
   const [hangoverPaint, setHangoverPaint] = useState<HangoverPaint>({
     active: false,
     dotCount: 0,
@@ -73,6 +77,13 @@ function App() {
 
   const onHangoverPaintChange = useCallback((p: HangoverPaint) => {
     setHangoverPaint(p)
+  }, [])
+
+  /** Dot hover wins over legend pin while the cursor is over the grid */
+  const cohortHover = dotHoverCohort ?? legendPinCohort
+
+  const toggleLegendPin = useCallback((key: CohortHover) => {
+    setLegendPinCohort((p) => (p === key ? null : key))
   }, [])
 
   const birth = useMemo(() => {
@@ -152,8 +163,8 @@ function App() {
                 every month for one focus runs in a single contiguous run, then the
                 next—so the last block on the right is the final stretch of the
                 90-year view (your remaining months of life in this grid).                 Counts per color match the allocations below after scaling across the
-                full band. Hover a dot—or a topic row here—to spotlight that cohort in
-                the grid and summaries. You can optionally model drinking-related
+                full band. Hover a dot—or click a topic row below—to spotlight that
+                cohort in the grid and summaries. You can optionally model drinking-related
                 impairment below; when enabled it paints rose month-dots at the end of
                 the timeline.
               </Text>
@@ -175,13 +186,15 @@ function App() {
               }
             >
               <Text fw={600} size="xs" tt="uppercase" c="dimmed" mb={6}>
-                Topics (hover to match the grid)
+                Topics (click to pin highlight; dots use hover)
               </Text>
               <Stack gap={6}>
                 {!birthInvalidFuture && livedCount > 0 && (
                   <Box
+                    component="button"
+                    type="button"
                     className={legendRowClass(cohortHover === 'lived')}
-                    onMouseEnter={() => setCohortHover('lived')}
+                    onClick={() => toggleLegendPin('lived')}
                   >
                     <Group gap={6} wrap="nowrap" align="flex-start">
                       <ColorSwatch
@@ -225,10 +238,12 @@ function App() {
                   return (
                     <Box
                       key={activity.key}
+                      component="button"
+                      type="button"
                       className={legendRowClass(
                         cohortHover !== null && cohortHover === activity.key,
                       )}
-                      onMouseEnter={() => setCohortHover(activity.key)}
+                      onClick={() => toggleLegendPin(activity.key)}
                     >
                       <Group gap={6} wrap="nowrap" align="flex-start">
                         <ColorSwatch
@@ -260,13 +275,16 @@ function App() {
                 {!birthInvalidFuture && hangoverPaint.active && (
                   <Box
                     key={HANGOVER_TOPIC.key}
+                    component="button"
+                    type="button"
+                    disabled={hangoverDots <= 0}
                     className={legendRowClass(
                       cohortHover !== null &&
                         cohortHover === HANGOVER_TOPIC.key,
                     )}
-                    onMouseEnter={() => {
+                    onClick={() => {
                       if (hangoverDots > 0) {
-                        setCohortHover(HANGOVER_TOPIC.key)
+                        toggleLegendPin(HANGOVER_TOPIC.key)
                       }
                     }}
                   >
@@ -350,8 +368,8 @@ function App() {
           <div
             className={`month-grid${dimCohort ? ' month-grid--cohort-dim' : ''}`}
             role="list"
-            aria-label="Past months white; each future month one activity color. Hover highlights a group."
-            onMouseLeave={() => setCohortHover(null)}
+            aria-label="Past months white; future months colored. Hover dots or click a legend row to spotlight a group."
+            onMouseLeave={() => setDotHoverCohort(null)}
           >
             {!birthInvalidFuture &&
               months.map((monthDate, index) => {
@@ -375,7 +393,7 @@ function App() {
                         role="listitem"
                         className={`month-dot month-dot--lived${matchesCohort ? ' month-dot--cohort-highlight' : ''}`}
                         aria-label={monthAriaLived(label)}
-                        onMouseEnter={() => setCohortHover('lived')}
+                        onMouseEnter={() => setDotHoverCohort('lived')}
                       />
                     </Tooltip>
                   )
@@ -422,7 +440,7 @@ function App() {
                       className={`month-dot month-dot--future${matchesCohort ? ' month-dot--cohort-highlight' : ''}`}
                       style={{ backgroundColor: focus.color }}
                       aria-label={monthAriaSummaryFuture(label, focus)}
-                      onMouseEnter={() => setCohortHover(focus.key)}
+                      onMouseEnter={() => setDotHoverCohort(focus.key)}
                     />
                   </Tooltip>
                 )
