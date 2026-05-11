@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   Alert,
   Badge,
+  Box,
   ColorSwatch,
   Container,
   Group,
@@ -99,6 +100,16 @@ function App() {
 
   const dimCohort = cohortHover !== null
 
+  function legendRowClass(isHighlighted: boolean): string {
+    return [
+      'legend-row',
+      dimCohort && !isHighlighted ? 'legend-row--dim' : '',
+      dimCohort && isHighlighted ? 'legend-row--highlight' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+
   return (
     <Container size="lg" py={{ base: 'md', sm: 'xl' }} px="md">
       <Stack gap="xl">
@@ -112,9 +123,9 @@ function App() {
                 Past months are white. Upcoming months are grouped in order:
                 every month for one focus runs in a single contiguous run, then the
                 next—so the last block on the right is the final stretch of the
-                90-year view (your remaining months of life in this grid). Counts
-                per color still match the percentages below. Hover a dot to
-                highlight every dot in that group and see how long that band is.
+                90-year view (your remaining months of life in this grid).                 Counts per color match the allocations below after scaling across the
+                full band. Hover a dot—or a topic row here—to spotlight that cohort in
+                the grid and summaries.
               </Text>
             </div>
 
@@ -128,29 +139,95 @@ function App() {
               maw={320}
             />
 
-            <div>
+            <div
+              className={
+                dimCohort ? 'legend-strip legend-strip--cohort-active' : 'legend-strip'
+              }
+            >
               <Text fw={600} size="xs" tt="uppercase" c="dimmed" mb={6}>
-                Share of upcoming months (by color)
+                Topics (hover to match the grid)
               </Text>
-              <Group gap="xs" align="flex-start">
-                {ACTIVITY_SPLITS.map((activity) => (
-                  <Group
-                    key={activity.key}
-                    gap={6}
-                    wrap="nowrap"
-                    style={{ flex: '1 1 auto', minWidth: 0 }}
+              <Stack gap={6}>
+                {!birthInvalidFuture && livedCount > 0 && (
+                  <Box
+                    className={legendRowClass(cohortHover === 'lived')}
+                    onMouseEnter={() => setCohortHover('lived')}
                   >
-                    <ColorSwatch size={14} color={activity.color} withShadow />
-                    <Text size="xs" c="dimmed" lh={1.35}>
-                      {activity.label}
-                      <span style={{ opacity: 0.85 }}>
-                        {' '}
-                        (~{Math.round(activity.fraction * 100)}%)
-                      </span>
-                    </Text>
-                  </Group>
-                ))}
-              </Group>
+                    <Group gap={6} wrap="nowrap" align="flex-start">
+                      <ColorSwatch
+                        size={14}
+                        color="#ffffff"
+                        withShadow
+                        style={{
+                          border: '1px solid var(--mantine-color-default-border)',
+                        }}
+                      />
+                      <Text size="xs" c="dimmed" lh={1.35}>
+                        <Text span fw={600} c="var(--mantine-color-text)">
+                          Past months
+                        </Text>
+                        {' · '}
+                        <Text span fw={600} c="var(--mantine-color-text)" inherit>
+                          {livedCount === 1
+                            ? '1 month lived'
+                            : `${livedCount.toLocaleString()} months lived`}
+                        </Text>
+                        <span style={{ opacity: 0.82 }}>
+                          {' '}
+                          (white dots in the grid)
+                        </span>
+                      </Text>
+                    </Group>
+                  </Box>
+                )}
+                {!birthInvalidFuture && (
+                  <Text fw={600} size="xs" tt="uppercase" c="dimmed" mt={4} mb={2}>
+                    Upcoming bands by share
+                  </Text>
+                )}
+                {ACTIVITY_SPLITS.map((activity) => {
+                  const ahead = birthInvalidFuture
+                    ? 0
+                    : (futureMonthsPerActivity.get(activity.key) ?? 0)
+                  const monthPhrase =
+                    ahead === 1 ? '1 month' : `${ahead} months`
+
+                  return (
+                    <Box
+                      key={activity.key}
+                      className={legendRowClass(
+                        cohortHover !== null && cohortHover === activity.key,
+                      )}
+                      onMouseEnter={() => setCohortHover(activity.key)}
+                    >
+                      <Group gap={6} wrap="nowrap" align="flex-start">
+                        <ColorSwatch
+                          size={14}
+                          color={activity.color}
+                          withShadow
+                        />
+                        <Text size="xs" c="dimmed" lh={1.35}>
+                          <Text span fw={600} c="var(--mantine-color-text)">
+                            {activity.label}
+                          </Text>
+                          {!birthInvalidFuture && (
+                            <>
+                              {' · '}
+                              <Text span fw={600} c="var(--mantine-color-text)" inherit>
+                                {monthPhrase}
+                              </Text>
+                              <span style={{ opacity: 0.82 }}>
+                                {' '}
+                                (~{Math.round(activity.fraction * 100)}% of upcoming)
+                              </span>
+                            </>
+                          )}
+                        </Text>
+                      </Group>
+                    </Box>
+                  )
+                })}
+              </Stack>
             </div>
 
             {birthInvalidFuture ? (
@@ -159,10 +236,32 @@ function App() {
               </Alert>
             ) : (
               <Group gap="sm">
-                <Badge size="lg" variant="filled" radius="sm">
+                <Badge
+                  size="lg"
+                  variant="filled"
+                  radius="sm"
+                  className={
+                    cohortHover === 'lived'
+                      ? 'legend-summary-badge legend-summary-badge--highlight'
+                      : dimCohort
+                        ? 'legend-summary-badge legend-summary-badge--dim'
+                        : undefined
+                  }
+                >
                   {livedCount.toLocaleString()} months lived
                 </Badge>
-                <Badge size="lg" variant="light" radius="sm">
+                <Badge
+                  size="lg"
+                  variant="light"
+                  radius="sm"
+                  className={
+                    dimCohort && cohortHover !== 'lived'
+                      ? 'legend-summary-badge legend-summary-badge--highlight'
+                      : cohortHover === 'lived'
+                        ? 'legend-summary-badge legend-summary-badge--dim'
+                        : undefined
+                  }
+                >
                   {remainingCount.toLocaleString()} months left in view
                 </Badge>
               </Group>

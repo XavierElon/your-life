@@ -86,3 +86,59 @@
     inset 0 0 0 1px color-mix(in srgb, #000 18%, transparent),
     0 0 0 3px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 45%);
 }
+
+/* Top legend mirrors grid cohort hover */
+.legend-strip {
+  max-width: 40rem;
+}
+
+.legend-row {
+  padding: 10px 12px;
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid
+    color-mix(in srgb, var(--mantine-color-default-border), transparent 35%);
+  background-color: color-mix(
+    in srgb,
+    var(--mantine-color-default-border),
+    transparent 92%
+  );
+  transition:
+    opacity 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+  cursor: default;
+}
+
+.legend-strip--cohort-active .legend-row--dim {
+  opacity: 0.38;
+}
+
+.legend-row--highlight {
+  opacity: 1 !important;
+  border-color: color-mix(
+    in srgb,
+    var(--mantine-primary-color-filled),
+    transparent 50%
+  );
+  background-color: var(--mantine-color-default-hover);
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--mantine-primary-color-filled), transparent 78%);
+}
+
+.legend-summary-badge {
+  transition:
+    opacity 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.legend-summary-badge--dim {
+  opacity: 0.45;
+  transform: scale(0.98);
+}
+
+.legend-summary-badge--highlight {
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--mantine-primary-color-filled), transparent 45%);
+}
