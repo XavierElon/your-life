@@ -11,6 +11,10 @@ permissions:
   pages: write
   id-token: write
 
+# Opt into Actions-on-Node until defaults switch (suppresses deprecation noise)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -19,13 +23,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -33,13 +37,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # production mode → vite.config base = /your-life/
       - name: Build
         run: pnpm run build
 
+      - name: Verify index bundles
+        run: |
+          test -f dist/index.html && grep -q 'your-life' dist/index.html || (echo dist/index.html missing base paths; exit 1)
+
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: dist
+          include-hidden-files: true
 
   deploy:
     needs: build
@@ -48,6 +58,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
