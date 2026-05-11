@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -15,11 +15,17 @@ import {
 } from '@mantine/core'
 import {
   ACTIVITY_SPLITS,
+  type ActivitySplit,
   cohortTooltipForActivity,
   cohortTooltipForLived,
   monthAriaLived,
   monthAriaSummaryFuture,
 } from './activities'
+import { HangoverSection } from './HangoverSection'
+import {
+  HANGOVER_TOPIC,
+  type HangoverPaint,
+} from './hangoverEstimate'
 import { allocateFutureMonthsSequential } from './futureAllocation'
 import './App.css'
 
@@ -60,6 +66,14 @@ function formatMonthLabel(d: Date): string {
 function App() {
   const [birthInput, setBirthInput] = useState('1990-01-01')
   const [cohortHover, setCohortHover] = useState<CohortHover | null>(null)
+  const [hangoverPaint, setHangoverPaint] = useState<HangoverPaint>({
+    active: false,
+    dotCount: 0,
+  })
+
+  const onHangoverPaintChange = useCallback((p: HangoverPaint) => {
+    setHangoverPaint(p)
+  }, [])
 
   const birth = useMemo(() => {
     const parsed = parseDateInput(birthInput)
@@ -82,10 +96,21 @@ function App() {
   const remainingCount = Math.max(0, totalMonths - livedCount)
   const maxBirth = now.toISOString().slice(0, 10)
 
+  const hangoverDots =
+    hangoverPaint.active && !birthInvalidFuture
+      ? Math.min(hangoverPaint.dotCount, remainingCount)
+      : 0
+  const futureMonthsForSplits = Math.max(0, remainingCount - hangoverDots)
+
   const futureAssignments = useMemo(() => {
     if (birthInvalidFuture) return []
-    return allocateFutureMonthsSequential(ACTIVITY_SPLITS, remainingCount)
-  }, [birthInvalidFuture, remainingCount])
+    return allocateFutureMonthsSequential(ACTIVITY_SPLITS, futureMonthsForSplits)
+  }, [birthInvalidFuture, futureMonthsForSplits])
+
+  const hangoverTopicSplit: ActivitySplit = useMemo(
+    () => ({ ...HANGOVER_TOPIC, fraction: 0 }),
+    [],
+  )
 
   const futureMonthsPerActivity = useMemo(() => {
     const map = new Map<string, number>()
@@ -95,8 +120,11 @@ function App() {
     for (const cell of futureAssignments) {
       map.set(cell.key, (map.get(cell.key) ?? 0) + 1)
     }
+    if (hangoverDots > 0) {
+      map.set(HANGOVER_TOPIC.key, hangoverDots)
+    }
     return map
-  }, [futureAssignments])
+  }, [futureAssignments, hangoverDots])
 
   const dimCohort = cohortHover !== null
 
@@ -125,7 +153,9 @@ function App() {
                 next—so the last block on the right is the final stretch of the
                 90-year view (your remaining months of life in this grid).                 Counts per color match the allocations below after scaling across the
                 full band. Hover a dot—or a topic row here—to spotlight that cohort in
-                the grid and summaries.
+                the grid and summaries. You can optionally model drinking-related
+                impairment below; when enabled it paints rose month-dots at the end of
+                the timeline.
               </Text>
             </div>
 
@@ -227,6 +257,41 @@ function App() {
                     </Box>
                   )
                 })}
+                {!birthInvalidFuture && hangoverPaint.active && (
+                  <Box
+                    key={HANGOVER_TOPIC.key}
+                    className={legendRowClass(
+                      cohortHover !== null &&
+                        cohortHover === HANGOVER_TOPIC.key,
+                    )}
+                    onMouseEnter={() => {
+                      if (hangoverDots > 0) {
+                        setCohortHover(HANGOVER_TOPIC.key)
+                      }
+                    }}
+                  >
+                    <Group gap={6} wrap="nowrap" align="flex-start">
+                      <ColorSwatch
+                        size={14}
+                        color={HANGOVER_TOPIC.color}
+                        withShadow
+                      />
+                      <Text size="xs" c="dimmed" lh={1.35}>
+                        <Text span fw={600} c="var(--mantine-color-text)">
+                          {HANGOVER_TOPIC.label}
+                        </Text>
+                        {' · '}
+                        <Text span fw={600} c="var(--mantine-color-text)" inherit>
+                          {hangoverDots === 1 ? '1 month' : `${hangoverDots} months`}
+                        </Text>
+                        <span style={{ opacity: 0.82 }}>
+                          {' '}
+                          (rose strip at timeline end)
+                        </span>
+                      </Text>
+                    </Group>
+                  </Box>
+                )}
               </Stack>
             </div>
 
@@ -268,6 +333,13 @@ function App() {
             )}
           </Stack>
         </Paper>
+
+        <HangoverSection
+          remainingDots={remainingCount}
+          totalDots={totalMonths}
+          timelineDisabled={birthInvalidFuture}
+          onPaintChange={onHangoverPaintChange}
+        />
 
         <Paper
           shadow="xs"
@@ -313,14 +385,24 @@ function App() {
                   .slice(0, index)
                   .filter((d) => d.getTime() > startOfThisMonth.getTime())
                   .length
-                const focus = futureAssignments[slot]
-                if (!focus) {
-                  return null
+
+                let focus: ActivitySplit
+                if (hangoverDots > 0 && slot >= futureMonthsForSplits) {
+                  focus = hangoverTopicSplit
+                } else {
+                  const f = futureAssignments[slot]
+                  if (!f) {
+                    return null
+                  }
+                  focus = f
                 }
 
                 const matchesCohort =
                   cohortHover !== null && cohortHover === focus.key
-                const monthsInRun = futureMonthsPerActivity.get(focus.key) ?? 0
+                const monthsInRun =
+                  focus.key === HANGOVER_TOPIC.key
+                    ? hangoverDots
+                    : (futureMonthsPerActivity.get(focus.key) ?? 0)
 
                 return (
                   <Tooltip

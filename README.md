@@ -9,6 +9,8 @@ If Pages uses **Deploy from a branch → `main` / `/`**, the site serves repo `i
 
 Manual run: **Actions → Deploy to GitHub Pages → Run workflow.**
 
+The app includes an optional **drinking / hangover** section that can paint rose month-dots at the end of the timeline from a simple impairment estimate (enable the checkbox on the page).
+
 ---
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
