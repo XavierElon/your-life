@@ -1,5 +1,16 @@
 # React + TypeScript + Vite
 
+## GitHub Pages
+
+Workflow **Deploy to GitHub Pages** uploads **`dist/`** from `pnpm run build` ( **`base`** = `/your-life/`).
+
+**Repository → Settings → Pages → Source must be GitHub Actions.**  
+If Pages uses **Deploy from a branch → `main` / `/`**, the site serves repo `index.html` with **`/src/main.tsx`** and stays blank—not a failed build.
+
+Manual run: **Actions → Deploy to GitHub Pages → Run workflow.**
+
+---
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

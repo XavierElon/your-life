@@ -1,10 +1,13 @@
 name: Deploy to GitHub Pages
+# Live site must publish THIS workflow’s artifact (Settings → Pages → Source → GitHub Actions).
+# Serving the repo branch (e.g. main / root) publishes raw index.html with /src/main.tsx → blank page.
 
 on:
   push:
     branches:
       - master
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -43,7 +46,16 @@ jobs:
 
       - name: Verify index bundles
         run: |
-          test -f dist/index.html && grep -q 'your-life' dist/index.html || (echo dist/index.html missing base paths; exit 1)
+          set -euo pipefail
+          test -f dist/index.html
+          if grep -q '/src/main\.' dist/index.html; then
+            echo 'dist/index.html still references dev /src/main — build did not bundle (wrong vite mode or wrong file).'; exit 1
+          fi
+          grep -qE '/your-life/assets/[^"[:space:]]+\.(js)' dist/index.html || (echo 'dist/index.html missing /your-life/assets/*.js'; exit 1)
+          grep -qE '/your-life/(assets/[^"]+\.css|favicon\.svg)' dist/index.html || (echo 'dist/index.html missing /your-life CSS or favicon'; exit 1)
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
@@ -58,5 +70,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
