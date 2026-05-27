@@ -1,9 +1,61 @@
+/* --- Life calendar (month grid) --- */
+.month-calendar-card {
+  overflow: hidden;
+  background:
+    radial-gradient(
+      1200px 520px at 50% -8%,
+      color-mix(
+        in srgb,
+        var(--mantine-primary-color-filled),
+        transparent 93%
+      ),
+      var(--mantine-color-body)
+    );
+}
+
+.month-calendar-head {
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-lg)
+    calc(var(--mantine-spacing-sm) + var(--mantine-spacing-xs));
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--mantine-color-default-border), transparent 35%);
+}
+
+.month-calendar-scroll {
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-xs);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 48em) {
+  .month-calendar-scroll {
+    padding: var(--mantine-spacing-md) var(--mantine-spacing-lg)
+      calc(var(--mantine-spacing-md) + var(--mantine-spacing-xs));
+  }
+}
+
 .month-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 7px;
   align-content: flex-start;
   justify-content: center;
+  padding: clamp(0.75rem, 2vw, 1.125rem);
+  margin: 0 auto;
+  max-width: min(54rem, 100%);
+  border-radius: calc(var(--mantine-radius-lg) + 2px);
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-default-border),
+    transparent 92%
+  );
+  border: 1px solid color-mix(
+    in srgb,
+    var(--mantine-color-default-border),
+    transparent 45%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--mantine-color-white) 18%, transparent),
+    0 1px 3px color-mix(in srgb, #000 5%, transparent);
 }
 
 .month-dot {
@@ -12,82 +64,155 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   padding: 0;
   border-radius: 9999px;
+  scroll-margin-inline: 2rem;
+  scroll-margin-block: 0.75rem;
   cursor: default;
   flex-shrink: 0;
   border: none;
-  overflow: hidden;
+  overflow: visible;
   background: transparent;
   transition:
-    opacity 140ms ease,
-    transform 140ms ease,
-    box-shadow 140ms ease,
-    filter 140ms ease;
+    opacity 185ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 185ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 185ms cubic-bezier(0.4, 0, 0.2, 1),
+    filter 185ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (max-width: 34em) {
+  .month-dot {
+    width: 13px;
+    height: 13px;
+  }
 }
 
 .month-dot:focus-visible {
   outline: 2px solid var(--mantine-primary-color-filled);
-  outline-offset: 2px;
+  outline-offset: 3px;
+  z-index: 3;
 }
 
 .month-dot--lived {
-  background-color: #ffffff;
+  background: radial-gradient(
+    circle at 32% 22%,
+    #ffffff 0%,
+    #f9fafb 55%,
+    #e9ecef 100%
+  );
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #000 14%, transparent),
-    0 0 0 1px color-mix(in srgb, #000 8%, transparent);
+    inset 0 1px 0 color-mix(in srgb, #fff 80%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 5%, transparent),
+    0 1px 2px color-mix(in srgb, #000 8%, transparent);
+}
+
+.month-dot--inspect-open {
+  outline: 2px solid color-mix(in srgb, var(--mantine-primary-color-filled), transparent 25%);
+  outline-offset: 3px;
+  z-index: 4;
 }
 
 .month-grid:not(.month-grid--cohort-dim) .month-dot--lived:hover {
+  filter: brightness(1.03);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #000 14%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 70%);
-  transform: scale(1.12);
+    inset 0 1px 0 color-mix(in srgb, #fff 82%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 78%),
+    0 4px 12px color-mix(in srgb, #000 10%, transparent);
+  transform: scale(1.15) translateY(-1px);
 }
 
 .month-dot--future {
+  /* --month-dot-accent set inline per dot */
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #000 22%, transparent),
-    0 0 0 1px color-mix(in srgb, #000 10%, transparent);
+    inset 0 1px 0 color-mix(in srgb, #fff 38%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 16%, transparent),
+    0 1px 2px color-mix(in srgb, #000 10%, transparent),
+    0 4px 14px color-mix(
+      in srgb,
+      var(--month-dot-accent, var(--mantine-primary-color-filled)),
+      transparent 74%
+    );
 }
 
 .month-grid:not(.month-grid--cohort-dim) .month-dot--future:hover {
+  filter: brightness(1.08) saturate(1.05);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #000 22%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 60%);
-  transform: scale(1.1);
-  filter: brightness(1.06);
+    inset 0 1px 0 color-mix(in srgb, #fff 52%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 65%),
+    0 6px 22px color-mix(
+      in srgb,
+      var(--month-dot-accent, var(--mantine-primary-color-filled)),
+      transparent 58%
+    );
+  transform: scale(1.14) translateY(-2px);
 }
 
-/* Cohort hover: dim others */
+/* Cohort focus: soften non-selected while keeping readability */
 .month-grid--cohort-dim .month-dot:not(.month-dot--cohort-highlight) {
-  opacity: 0.28;
-  filter: grayscale(0.35);
-  transform: scale(0.9);
+  opacity: 0.32;
+  filter: grayscale(0.42) brightness(0.92);
+  transform: scale(0.88);
 }
 
 .month-grid--cohort-dim .month-dot--cohort-highlight {
   opacity: 1;
   filter: none;
-  transform: scale(1.22);
+  transform: scale(1.26) translateY(-2px);
   z-index: 2;
 }
 
 .month-dot--future.month-dot--cohort-highlight {
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #fff 35%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 35%);
+    inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent),
+    0 0 0 2px
+      color-mix(in srgb, var(--mantine-primary-color-filled), transparent 42%),
+    0 10px 28px color-mix(
+      in srgb,
+      var(--month-dot-accent, var(--mantine-primary-color-filled)),
+      transparent 45%
+    );
 }
 
 .month-dot--lived.month-dot--cohort-highlight {
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, #000 18%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 45%);
+    inset 0 1px 0 color-mix(in srgb, #fff 88%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--mantine-primary-color-filled), transparent 38%),
+    0 8px 20px color-mix(in srgb, #000 12%, transparent);
 }
 
-/* Top legend mirrors grid cohort hover */
+/* --- Legend (topics) --- */
+.legend-corner {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid
+    color-mix(in srgb, var(--mantine-color-default-border), transparent 40%);
+  background: color-mix(
+    in srgb,
+    var(--mantine-color-default-border),
+    transparent 93%
+  );
+}
+
+@media (min-width: 48em) {
+  .legend-corner {
+    position: sticky;
+    top: var(--mantine-spacing-md);
+    min-width: 13.5rem;
+  }
+}
+
+.legend-row--compact {
+  padding: 6px 8px;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.legend-corner--cohort-active .legend-row--dim,
+.legend-strip--cohort-active .legend-row--dim {
+  opacity: 0.38;
+}
+
 .legend-strip {
   max-width: 40rem;
 }
@@ -127,10 +252,6 @@ button.legend-row:disabled {
 button.legend-row:focus-visible {
   outline: 2px solid var(--mantine-primary-color-filled);
   outline-offset: 2px;
-}
-
-.legend-strip--cohort-active .legend-row--dim {
-  opacity: 0.38;
 }
 
 .legend-row--highlight {

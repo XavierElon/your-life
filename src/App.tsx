@@ -1,35 +1,20 @@
-import { useCallback, useMemo, useState } from 'react'
-import {
-  Alert,
-  Badge,
-  Box,
-  ColorSwatch,
-  Container,
-  Group,
-  Paper,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-  Tooltip,
-} from '@mantine/core'
-import {
-  ACTIVITY_SPLITS,
-  type ActivitySplit,
-  cohortTooltipForActivity,
-  cohortTooltipForLived,
-  monthAriaLived,
-  monthAriaSummaryFuture,
-} from './activities'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { Alert, Badge, Box, Button, ColorSwatch, Container, Group, Modal, Paper, Stack, Text, TextInput, Title, Tooltip } from '@mantine/core'
+import { ACTIVITY_SPLITS, type ActivitySplit, cohortTooltipForActivity, cohortTooltipForLived, monthAriaLived, monthAriaSummaryFuture } from './activities'
 import { HangoverSection } from './HangoverSection'
-import {
-  HANGOVER_TOPIC,
-  type HangoverPaint,
-} from './hangoverEstimate'
+import { HANGOVER_TOPIC, type HangoverPaint } from './hangoverEstimate'
 import { allocateFutureMonthsSequential } from './futureAllocation'
+import {
+  WEEKLY_TOPIC_SOCIAL_KEY,
+  WEEKLY_TOPIC_TV_KEY,
+  mergeActivitiesWithWeeklyTopics
+} from './timeBudgetActivities'
+import { WeeklyHobbiesSection } from './WeeklyHobbiesSection'
 import './App.css'
 
 const EXPECTED_LIFESPAN_YEARS = 90
+const TOTAL_MONTHS = EXPECTED_LIFESPAN_YEARS * 12
 
 /** 'lived' = all white dots; otherwise activity `key` */
 type CohortHover = 'lived' | (string & {})
@@ -42,11 +27,7 @@ function parseDateInput(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
   const [y, m, day] = value.split('-').map(Number)
   const d = new Date(y, m - 1, day)
-  if (
-    d.getFullYear() !== y ||
-    d.getMonth() !== m - 1 ||
-    d.getDate() !== day
-  ) {
+  if (d.getFullYear() !== y || d.getMonth() !== m - 1 || d.getDate() !== day) {
     return null
   }
   return d
@@ -63,17 +44,44 @@ function formatMonthLabel(d: Date): string {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
 }
 
+function futureSlotBeforeIndex(months: Date[], gridIndex: number, startOfThisMonth: Date): number {
+  return months.slice(0, gridIndex).filter((d) => d.getTime() > startOfThisMonth.getTime()).length
+}
+
+/** Grid index matching today’s calendar month, or −1 when “now” sits outside this 90‑year span. */
+function indexOfCalendarMonth(months: Date[], cal: Date): number {
+  return months.findIndex(
+    (d) => d.getFullYear() === cal.getFullYear() && d.getMonth() === cal.getMonth()
+  )
+}
+
+function monthsInRunSummary(n: number): string {
+  if (n <= 0) {
+    return 'Under this toy model there are no month-dots labeled with this topic in the horizon yet.'
+  }
+  if (n === 1) {
+    return 'Under this toy model there is roughly 1 month-dot in this topic across the horizon (hangover overlay included when it is enabled).'
+  }
+  return `Under this toy model there are roughly ${n.toLocaleString()} month-dots in this topic across the horizon (hangover overlay included when it is enabled).`
+}
+
 function App() {
   const [birthInput, setBirthInput] = useState('1990-01-01')
   /** From grid dots only; cleared when pointer leaves the month grid */
   const [dotHoverCohort, setDotHoverCohort] = useState<CohortHover | null>(null)
   /** From legend row clicks only; toggle same row to clear */
-  const [legendPinCohort, setLegendPinCohort] =
-    useState<CohortHover | null>(null)
+  const [legendPinCohort, setLegendPinCohort] = useState<CohortHover | null>(null)
   const [hangoverPaint, setHangoverPaint] = useState<HangoverPaint>({
     active: false,
-    dotCount: 0,
+    dotCount: 0
   })
+  const [inspectIndex, setInspectIndex] = useState<number | null>(null)
+  const [hoursSocialPerWeek, setHoursSocialPerWeek] = useState(0)
+  const [hoursTvPerWeek, setHoursTvPerWeek] = useState(0)
+  const [weeklySocialLabel, setWeeklySocialLabel] = useState('Social media')
+  const [weeklyTvLabel, setWeeklyTvLabel] = useState('Watching TV')
+
+  const scrollElRef = useRef<HTMLDivElement>(null)
 
   const onHangoverPaintChange = useCallback((p: HangoverPaint) => {
     setHangoverPaint(p)
@@ -88,44 +96,42 @@ function App() {
 
   const birth = useMemo(() => {
     const parsed = parseDateInput(birthInput)
-    return parsed ?? new Date(1990, 0, 1)
+    return parsed ?? new Date(1993, 0, 1)
   }, [birthInput])
 
   const now = new Date()
   const startOfThisMonth = startOfMonth(now)
   const birthInvalidFuture = startOfMonth(birth) > startOfThisMonth
 
-  const totalMonths = EXPECTED_LIFESPAN_YEARS * 12
-  const months = useMemo(
-    () => monthStartsFromFirst(birth, totalMonths),
-    [birth, totalMonths],
-  )
+  const totalMonths = TOTAL_MONTHS
+  const months = monthStartsFromFirst(birth, TOTAL_MONTHS)
 
-  const livedCount = birthInvalidFuture
-    ? 0
-    : months.filter((d) => d.getTime() <= startOfThisMonth.getTime()).length
+  const livedCount = birthInvalidFuture ? 0 : months.filter((d) => d.getTime() <= startOfThisMonth.getTime()).length
   const remainingCount = Math.max(0, totalMonths - livedCount)
   const maxBirth = now.toISOString().slice(0, 10)
 
-  const hangoverDots =
-    hangoverPaint.active && !birthInvalidFuture
-      ? Math.min(hangoverPaint.dotCount, remainingCount)
-      : 0
+  const hangoverDots = hangoverPaint.active && !birthInvalidFuture ? Math.min(hangoverPaint.dotCount, remainingCount) : 0
   const futureMonthsForSplits = Math.max(0, remainingCount - hangoverDots)
+
+  const mergedActivitySplits = useMemo(
+    () =>
+      mergeActivitiesWithWeeklyTopics(ACTIVITY_SPLITS, hoursSocialPerWeek, hoursTvPerWeek, 100, {
+        socialLabel: weeklySocialLabel,
+        tvLabel: weeklyTvLabel
+      }),
+    [hoursSocialPerWeek, hoursTvPerWeek, weeklySocialLabel, weeklyTvLabel],
+  )
 
   const futureAssignments = useMemo(() => {
     if (birthInvalidFuture) return []
-    return allocateFutureMonthsSequential(ACTIVITY_SPLITS, futureMonthsForSplits)
-  }, [birthInvalidFuture, futureMonthsForSplits])
+    return allocateFutureMonthsSequential(mergedActivitySplits, futureMonthsForSplits)
+  }, [birthInvalidFuture, futureMonthsForSplits, mergedActivitySplits])
 
-  const hangoverTopicSplit: ActivitySplit = useMemo(
-    () => ({ ...HANGOVER_TOPIC, fraction: 0 }),
-    [],
-  )
+  const hangoverTopicSplit: ActivitySplit = useMemo(() => ({ ...HANGOVER_TOPIC, fraction: 0 }), [])
 
   const futureMonthsPerActivity = useMemo(() => {
     const map = new Map<string, number>()
-    for (const a of ACTIVITY_SPLITS) {
+    for (const a of mergedActivitySplits) {
       map.set(a.key, 0)
     }
     for (const cell of futureAssignments) {
@@ -135,139 +141,247 @@ function App() {
       map.set(HANGOVER_TOPIC.key, hangoverDots)
     }
     return map
-  }, [futureAssignments, hangoverDots])
+  }, [mergedActivitySplits, futureAssignments, hangoverDots])
+
+  const jumpTargetIndex = useMemo(() => {
+    if (birthInvalidFuture) return null
+    const ix = indexOfCalendarMonth(months, startOfThisMonth)
+    if (ix >= 0) return ix
+    if (months[0]?.getTime() > startOfThisMonth.getTime()) return 0
+    return TOTAL_MONTHS - 1
+  }, [birthInvalidFuture, months, startOfThisMonth])
+
+  const scrollToDotIndex = useCallback((idx: number) => {
+    const scope = scrollElRef.current
+    if (!scope) return
+    const el = scope.querySelector<HTMLElement>(`[data-dot-index="${idx}"]`)
+    el?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+  }, [])
+
+  const jumpToNow = useCallback(() => {
+    if (jumpTargetIndex === null) return
+    scrollToDotIndex(jumpTargetIndex)
+  }, [jumpTargetIndex, scrollToDotIndex])
+
+  const inspectPayload = useMemo(() => {
+    if (inspectIndex === null || birthInvalidFuture || inspectIndex < 0 || inspectIndex >= months.length) {
+      return null
+    }
+    const monthDate = months[inspectIndex]
+    const label = formatMonthLabel(monthDate)
+    const ordinal = inspectIndex + 1
+    const lived = monthDate.getTime() <= startOfThisMonth.getTime()
+
+    if (lived) {
+      return {
+        label,
+        lived: true as const,
+        ordinal,
+        livedTotal: livedCount
+      }
+    }
+
+    const slot = futureSlotBeforeIndex(months, inspectIndex, startOfThisMonth)
+    const focus: ActivitySplit | null =
+      hangoverDots > 0 && slot >= futureMonthsForSplits ? hangoverTopicSplit : futureAssignments[slot] ?? null
+    const monthsInRun =
+      focus && focus.key === HANGOVER_TOPIC.key ? hangoverDots : focus ? (futureMonthsPerActivity.get(focus.key) ?? 0) : 0
+
+    return {
+      label,
+      lived: false as const,
+      ordinal,
+      focus,
+      monthsInRun,
+      futureOrdinal: slot + 1,
+      remainingTotal: remainingCount
+    }
+  }, [
+    inspectIndex,
+    birthInvalidFuture,
+    months,
+    startOfThisMonth,
+    livedCount,
+    hangoverDots,
+    futureMonthsForSplits,
+    hangoverTopicSplit,
+    futureAssignments,
+    futureMonthsPerActivity,
+    remainingCount
+  ])
 
   const dimCohort = cohortHover !== null
 
   function legendRowClass(isHighlighted: boolean): string {
-    return [
-      'legend-row',
-      dimCohort && !isHighlighted ? 'legend-row--dim' : '',
-      dimCohort && isHighlighted ? 'legend-row--highlight' : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
+    return ['legend-row', dimCohort && !isHighlighted ? 'legend-row--dim' : '', dimCohort && isHighlighted ? 'legend-row--highlight' : ''].filter(Boolean).join(' ')
   }
 
   return (
     <Container size="lg" py={{ base: 'md', sm: 'xl' }} px="md">
       <Stack gap="xl">
-        <Paper shadow="sm" p={{ base: 'md', sm: 'xl' }} radius="lg" withBorder>
-          <Stack gap="md">
-            <div>
+        <Paper shadow="sm" p={{ base: 'md', sm: 'lg' }} radius="lg" withBorder>
+          <Group gap="lg" align="flex-start" justify="space-between" wrap="wrap">
+            <Stack gap="sm" style={{ flex: '1 1 18rem', minWidth: 0 }} maw={{ base: '100%', sm: 620 }}>
               <Title order={1} size="h2" fw={700} lts="-0.02em">
                 Your life in months
               </Title>
-              <Text c="dimmed" size="sm" mt="xs" maw={620}>
-                Past months are white. Upcoming months are grouped in order:
-                every month for one focus runs in a single contiguous run, then the
-                next—so the last block on the right is the final stretch of the
-                90-year view (your remaining months of life in this grid).                 Counts per color match the allocations below after scaling across the
-                full band. Hover a dot—or click a topic row below—to spotlight that
-                cohort in the grid and summaries. You can optionally model drinking-related
-                impairment below; when enabled it paints rose month-dots at the end of
-                the timeline.
+              <Text c="dimmed" size="sm">
+                One dot · one calendar month over a 90-year span. Click a dot for details · hover or use the legend to spotlight a cohort. Optional hangover model adds rose dots at the end of the timeline.
               </Text>
-            </div>
+              <TextInput
+                label="Birth date"
+                description="Starts at the first day of that month."
+                type="date"
+                max={maxBirth}
+                value={birthInput}
+                onChange={(e) => setBirthInput(e.currentTarget.value)}
+                maw={320}
+              />
+              <HangoverSection remainingDots={remainingCount} totalDots={totalMonths} timelineDisabled={birthInvalidFuture} onPaintChange={onHangoverPaintChange} />
+              <WeeklyHobbiesSection
+                timelineDisabled={birthInvalidFuture}
+                horizonMonthsAhead={birthInvalidFuture ? 0 : remainingCount}
+                allocationSlotsAmongHorizon={birthInvalidFuture ? 0 : futureMonthsForSplits}
+                hangoverDotsTakingHorizonTail={birthInvalidFuture ? 0 : hangoverDots}
+                hoursSocialPerWeek={hoursSocialPerWeek}
+                hoursTvPerWeek={hoursTvPerWeek}
+                onSocialHoursChange={setHoursSocialPerWeek}
+                onTvHoursChange={setHoursTvPerWeek}
+                socialTopicLabel={weeklySocialLabel}
+                tvTopicLabel={weeklyTvLabel}
+                onSocialTopicChange={setWeeklySocialLabel}
+                onTvTopicChange={setWeeklyTvLabel}
+                monthsAheadSocial={birthInvalidFuture ? 0 : (futureMonthsPerActivity.get(WEEKLY_TOPIC_SOCIAL_KEY) ?? 0)}
+                monthsAheadTv={birthInvalidFuture ? 0 : (futureMonthsPerActivity.get(WEEKLY_TOPIC_TV_KEY) ?? 0)}
+              />
+              {birthInvalidFuture ? (
+                <Alert color="red" variant="light" title="Check your birth date">
+                  Choose a date on or before today so the timeline makes sense.
+                </Alert>
+              ) : (
+                <Group gap="sm">
+                  <Badge
+                    size="lg"
+                    variant="filled"
+                    radius="sm"
+                    className={
+                      cohortHover === 'lived'
+                        ? 'legend-summary-badge legend-summary-badge--highlight'
+                        : dimCohort
+                          ? 'legend-summary-badge legend-summary-badge--dim'
+                          : undefined
+                    }
+                  >
+                    {livedCount.toLocaleString()} months lived
+                  </Badge>
+                  <Badge
+                    size="lg"
+                    variant="light"
+                    radius="sm"
+                    className={
+                      dimCohort && cohortHover !== 'lived'
+                        ? 'legend-summary-badge legend-summary-badge--highlight'
+                        : cohortHover === 'lived'
+                          ? 'legend-summary-badge legend-summary-badge--dim'
+                          : undefined
+                    }
+                  >
+                    {remainingCount.toLocaleString()} months left in view
+                  </Badge>
+                </Group>
+              )}
+            </Stack>
 
-            <TextInput
-              label="Birth date"
-              description="We start from the first day of that month."
-              type="date"
-              max={maxBirth}
-              value={birthInput}
-              onChange={(e) => setBirthInput(e.currentTarget.value)}
-              maw={320}
-            />
-
-            <div
+            <Box
+              component="aside"
+              aria-label="Topics legend"
               className={
-                dimCohort ? 'legend-strip legend-strip--cohort-active' : 'legend-strip'
+                dimCohort ? 'legend-corner legend-corner--cohort-active' : 'legend-corner'
               }
+              maw={{ base: '100%', xs: '100%', sm: 240 }}
+              w={{ base: '100%', sm: 'auto' }}
+              flex={{ base: '1 1 100%', sm: '0 0 auto' }}
             >
-              <Text fw={600} size="xs" tt="uppercase" c="dimmed" mb={6}>
-                Topics (click to pin highlight; dots use hover)
+              <Text fw={700} size="xs" tt="uppercase" c="dimmed" mb={8}>
+                Topics
               </Text>
-              <Stack gap={6}>
+              <Text size="xs" c="dimmed" mb={8}>
+                Legend: click to pin · hover dots temporarily
+              </Text>
+              <Stack gap={4}>
                 {!birthInvalidFuture && livedCount > 0 && (
                   <Box
                     component="button"
                     type="button"
-                    className={legendRowClass(cohortHover === 'lived')}
+                    className={`legend-row legend-row--compact ${legendRowClass(cohortHover === 'lived')}`}
                     onClick={() => toggleLegendPin('lived')}
                   >
-                    <Group gap={6} wrap="nowrap" align="flex-start">
+                    <Group gap={6} wrap="nowrap" justify="flex-start" align="center">
                       <ColorSwatch
-                        size={14}
+                        size={12}
                         color="#ffffff"
                         withShadow
                         style={{
                           border: '1px solid var(--mantine-color-default-border)',
+                          flexShrink: 0,
                         }}
                       />
-                      <Text size="xs" c="dimmed" lh={1.35}>
-                        <Text span fw={600} c="var(--mantine-color-text)">
-                          Past months
+                      <Box style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                        <Text size="xs" fw={600} lh={1.25} truncate>
+                          Past
                         </Text>
-                        {' · '}
-                        <Text span fw={600} c="var(--mantine-color-text)" inherit>
-                          {livedCount === 1
-                            ? '1 month lived'
-                            : `${livedCount.toLocaleString()} months lived`}
+                        <Text size="xs" c="dimmed" lh={1.2}>
+                          {livedCount.toLocaleString()} mo
                         </Text>
-                        <span style={{ opacity: 0.82 }}>
-                          {' '}
-                          (white dots in the grid)
-                        </span>
-                      </Text>
+                      </Box>
                     </Group>
                   </Box>
                 )}
-                {!birthInvalidFuture && (
-                  <Text fw={600} size="xs" tt="uppercase" c="dimmed" mt={4} mb={2}>
-                    Upcoming bands by share
-                  </Text>
-                )}
-                {ACTIVITY_SPLITS.map((activity) => {
+                {mergedActivitySplits.map((activity) => {
                   const ahead = birthInvalidFuture
                     ? 0
                     : (futureMonthsPerActivity.get(activity.key) ?? 0)
-                  const monthPhrase =
-                    ahead === 1 ? '1 month' : `${ahead} months`
-
+                  const monthPhrase = ahead === 1 ? '1 mo' : `${ahead} mo`
+                  const pctShare = birthInvalidFuture
+                    ? ''
+                    : ` · ~${Math.round(activity.fraction * 100)}%`
+                  const hoursNote =
+                    !birthInvalidFuture && activity.key === WEEKLY_TOPIC_SOCIAL_KEY
+                      ? ` · ${hoursSocialPerWeek} h/wk`
+                      : !birthInvalidFuture && activity.key === WEEKLY_TOPIC_TV_KEY
+                        ? ` · ${hoursTvPerWeek} h/wk`
+                        : ''
                   return (
                     <Box
                       key={activity.key}
                       component="button"
                       type="button"
-                      className={legendRowClass(
-                        cohortHover !== null && cohortHover === activity.key,
-                      )}
+                      className={`legend-row legend-row--compact ${legendRowClass(cohortHover !== null && cohortHover === activity.key)}`}
                       onClick={() => toggleLegendPin(activity.key)}
                     >
-                      <Group gap={6} wrap="nowrap" align="flex-start">
+                      <Group gap={6} wrap="nowrap" justify="flex-start" align="center">
                         <ColorSwatch
-                          size={14}
+                          size={12}
                           color={activity.color}
                           withShadow
+                          style={{ flexShrink: 0 }}
                         />
-                        <Text size="xs" c="dimmed" lh={1.35}>
-                          <Text span fw={600} c="var(--mantine-color-text)">
+                        <Box style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                          <Text size="xs" fw={600} lh={1.25} truncate>
                             {activity.label}
                           </Text>
-                          {!birthInvalidFuture && (
-                            <>
-                              {' · '}
-                              <Text span fw={600} c="var(--mantine-color-text)" inherit>
+                          <Text size="xs" c="dimmed" lh={1.2} lineClamp={1}>
+                            {!birthInvalidFuture ? (
+                              <>
                                 {monthPhrase}
-                              </Text>
-                              <span style={{ opacity: 0.82 }}>
-                                {' '}
-                                (~{Math.round(activity.fraction * 100)}% of upcoming)
-                              </span>
-                            </>
-                          )}
-                        </Text>
+                                {pctShare}
+                                {hoursNote}
+                              </>
+                            ) : (
+                              <span>Past × future splits after birth date</span>
+                            )}
+                          </Text>
+                        </Box>
                       </Group>
                     </Box>
                   )
@@ -278,175 +392,209 @@ function App() {
                     component="button"
                     type="button"
                     disabled={hangoverDots <= 0}
-                    className={legendRowClass(
-                      cohortHover !== null &&
-                        cohortHover === HANGOVER_TOPIC.key,
-                    )}
+                    className={`legend-row legend-row--compact ${legendRowClass(cohortHover !== null && cohortHover === HANGOVER_TOPIC.key)}`}
                     onClick={() => {
-                      if (hangoverDots > 0) {
-                        toggleLegendPin(HANGOVER_TOPIC.key)
-                      }
+                      if (hangoverDots > 0) toggleLegendPin(HANGOVER_TOPIC.key)
                     }}
                   >
-                    <Group gap={6} wrap="nowrap" align="flex-start">
+                    <Group gap={6} wrap="nowrap" justify="flex-start" align="center">
                       <ColorSwatch
-                        size={14}
+                        size={12}
                         color={HANGOVER_TOPIC.color}
                         withShadow
+                        style={{ flexShrink: 0 }}
                       />
-                      <Text size="xs" c="dimmed" lh={1.35}>
-                        <Text span fw={600} c="var(--mantine-color-text)">
-                          {HANGOVER_TOPIC.label}
+                      <Box style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                        <Text size="xs" fw={600} lh={1.25} truncate>
+                          Hangover overlay
                         </Text>
-                        {' · '}
-                        <Text span fw={600} c="var(--mantine-color-text)" inherit>
-                          {hangoverDots === 1 ? '1 month' : `${hangoverDots} months`}
+                        <Text size="xs" c="dimmed" lh={1.2}>
+                          {hangoverDots <= 0
+                            ? '—'
+                            : hangoverDots === 1
+                              ? '1 mo tail'
+                              : `${hangoverDots} mo tail`}
                         </Text>
-                        <span style={{ opacity: 0.82 }}>
-                          {' '}
-                          (rose strip at timeline end)
-                        </span>
-                      </Text>
+                      </Box>
                     </Group>
                   </Box>
                 )}
               </Stack>
-            </div>
-
-            {birthInvalidFuture ? (
-              <Alert color="red" variant="light" title="Check your birth date">
-                Choose a date on or before today so the timeline makes sense.
-              </Alert>
-            ) : (
-              <Group gap="sm">
-                <Badge
-                  size="lg"
-                  variant="filled"
-                  radius="sm"
-                  className={
-                    cohortHover === 'lived'
-                      ? 'legend-summary-badge legend-summary-badge--highlight'
-                      : dimCohort
-                        ? 'legend-summary-badge legend-summary-badge--dim'
-                        : undefined
-                  }
-                >
-                  {livedCount.toLocaleString()} months lived
-                </Badge>
-                <Badge
-                  size="lg"
-                  variant="light"
-                  radius="sm"
-                  className={
-                    dimCohort && cohortHover !== 'lived'
-                      ? 'legend-summary-badge legend-summary-badge--highlight'
-                      : cohortHover === 'lived'
-                        ? 'legend-summary-badge legend-summary-badge--dim'
-                        : undefined
-                  }
-                >
-                  {remainingCount.toLocaleString()} months left in view
-                </Badge>
-              </Group>
-            )}
-          </Stack>
+            </Box>
+          </Group>
         </Paper>
 
-        <HangoverSection
-          remainingDots={remainingCount}
-          totalDots={totalMonths}
-          timelineDisabled={birthInvalidFuture}
-          onPaintChange={onHangoverPaintChange}
-        />
+        <Paper radius="xl" withBorder shadow="sm" p={0} className="month-calendar-card">
+          <div className="month-calendar-head">
+            <Group justify="space-between" align="flex-start" gap="sm" wrap="wrap">
+              <div style={{ flex: '1 1 14rem', minWidth: 0 }}>
+                <Text size="xs" fw={700} tt="uppercase" c="dimmed" lh={1.2}>
+                  Life calendar
+                </Text>
+                <Text size="sm" fw={500} mt={4}>
+                  {birthInvalidFuture ? (
+                    <>{totalMonths.toLocaleString()} months in grid — add a birth date on or before today to separate past vs future.</>
+                  ) : (
+                    <>
+                      <Text span fw={600} inherit>
+                        {livedCount.toLocaleString()}
+                      </Text>{' '}
+                      lived ·{' '}
+                      <Text span fw={600} inherit>
+                        {remainingCount.toLocaleString()}
+                      </Text>{' '}
+                      ahead · {totalMonths.toLocaleString()} total
+                    </>
+                  )}
+                </Text>
+                <Text size="xs" c="dimmed" mt={6}>
+                  {!birthInvalidFuture ? 'One dot · one calendar month · read chronologically along rows' : 'Each dot equals one calendar month'}
+                </Text>
+              </div>
+              {!birthInvalidFuture && jumpTargetIndex !== null && (
+                <Button variant="light" size="compact-sm" aria-label="Scroll calendar to today’s month" onClick={jumpToNow}>
+                  Jump to now
+                </Button>
+              )}
+            </Group>
+          </div>
+          <div ref={scrollElRef} className="month-calendar-scroll">
+            <div className={`month-grid${dimCohort ? ' month-grid--cohort-dim' : ''}`} role="list" aria-label="Past months white; future months colored. Click a dot for month details · hover dots or pin the legend." onMouseLeave={() => setDotHoverCohort(null)}>
+              {!birthInvalidFuture &&
+                months.map((monthDate, index) => {
+                  const lived = monthDate.getTime() <= startOfThisMonth.getTime()
+                  const label = formatMonthLabel(monthDate)
 
-        <Paper
-          shadow="xs"
-          p={{ base: 'sm', sm: 'md' }}
-          radius="lg"
-          withBorder
-        >
-          <div
-            className={`month-grid${dimCohort ? ' month-grid--cohort-dim' : ''}`}
-            role="list"
-            aria-label="Past months white; future months colored. Hover dots or click a legend row to spotlight a group."
-            onMouseLeave={() => setDotHoverCohort(null)}
-          >
-            {!birthInvalidFuture &&
-              months.map((monthDate, index) => {
-                const lived =
-                  monthDate.getTime() <= startOfThisMonth.getTime()
-                const label = formatMonthLabel(monthDate)
+                  if (lived) {
+                    const matchesCohort = cohortHover !== null && cohortHover === 'lived'
+                    return (
+                      <Tooltip key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`} label={cohortTooltipForLived(livedCount)} position="top" withArrow openDelay={120}>
+                        <button
+                          type="button"
+                          role="listitem"
+                          data-dot-index={index}
+                          className={`month-dot month-dot--lived${matchesCohort ? ' month-dot--cohort-highlight' : ''}${inspectIndex === index ? ' month-dot--inspect-open' : ''}`}
+                          aria-label={`${monthAriaLived(label)} · click for details`}
+                          onMouseEnter={() => setDotHoverCohort('lived')}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            setInspectIndex(index)
+                          }}
+                        />
+                      </Tooltip>
+                    )
+                  }
 
-                if (lived) {
-                  const matchesCohort =
-                    cohortHover !== null && cohortHover === 'lived'
+                  const slot = months.slice(0, index).filter((d) => d.getTime() > startOfThisMonth.getTime()).length
+
+                  let focus: ActivitySplit
+                  if (hangoverDots > 0 && slot >= futureMonthsForSplits) {
+                    focus = hangoverTopicSplit
+                  } else {
+                    const f = futureAssignments[slot]
+                    if (!f) {
+                      return null
+                    }
+                    focus = f
+                  }
+
+                  const matchesCohort = cohortHover !== null && cohortHover === focus.key
+                  const monthsInRun = focus.key === HANGOVER_TOPIC.key ? hangoverDots : (futureMonthsPerActivity.get(focus.key) ?? 0)
+
                   return (
-                    <Tooltip
-                      key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`}
-                      label={cohortTooltipForLived(livedCount)}
-                      position="top"
-                      withArrow
-                      openDelay={120}
-                    >
+                    <Tooltip key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`} label={cohortTooltipForActivity(focus, monthsInRun, remainingCount)} position="top" withArrow openDelay={120}>
                       <button
                         type="button"
                         role="listitem"
-                        className={`month-dot month-dot--lived${matchesCohort ? ' month-dot--cohort-highlight' : ''}`}
-                        aria-label={monthAriaLived(label)}
-                        onMouseEnter={() => setDotHoverCohort('lived')}
+                        data-dot-index={index}
+                        className={`month-dot month-dot--future${matchesCohort ? ' month-dot--cohort-highlight' : ''}${inspectIndex === index ? ' month-dot--inspect-open' : ''}`}
+                        style={
+                          {
+                            backgroundColor: focus.color,
+                            '--month-dot-accent': focus.color
+                          } as CSSProperties
+                        }
+                        aria-label={`${monthAriaSummaryFuture(label, focus)} · click for details`}
+                        onMouseEnter={() => setDotHoverCohort(focus.key)}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          setInspectIndex(index)
+                        }}
                       />
                     </Tooltip>
                   )
-                }
-
-                const slot = months
-                  .slice(0, index)
-                  .filter((d) => d.getTime() > startOfThisMonth.getTime())
-                  .length
-
-                let focus: ActivitySplit
-                if (hangoverDots > 0 && slot >= futureMonthsForSplits) {
-                  focus = hangoverTopicSplit
-                } else {
-                  const f = futureAssignments[slot]
-                  if (!f) {
-                    return null
-                  }
-                  focus = f
-                }
-
-                const matchesCohort =
-                  cohortHover !== null && cohortHover === focus.key
-                const monthsInRun =
-                  focus.key === HANGOVER_TOPIC.key
-                    ? hangoverDots
-                    : (futureMonthsPerActivity.get(focus.key) ?? 0)
-
-                return (
-                  <Tooltip
-                    key={`${monthDate.getFullYear()}-${monthDate.getMonth()}`}
-                    label={cohortTooltipForActivity(
-                      focus,
-                      monthsInRun,
-                      remainingCount,
-                    )}
-                    position="top"
-                    withArrow
-                    openDelay={120}
-                  >
-                    <button
-                      type="button"
-                      role="listitem"
-                      className={`month-dot month-dot--future${matchesCohort ? ' month-dot--cohort-highlight' : ''}`}
-                      style={{ backgroundColor: focus.color }}
-                      aria-label={monthAriaSummaryFuture(label, focus)}
-                      onMouseEnter={() => setDotHoverCohort(focus.key)}
-                    />
-                  </Tooltip>
-                )
-              })}
+                })}
+            </div>
           </div>
         </Paper>
+
+        <Modal opened={inspectIndex !== null} onClose={() => setInspectIndex(null)} title={inspectPayload?.label ?? 'Month'} size="sm" centered>
+          {!inspectPayload ? (
+            <Text size="sm" c="dimmed">
+              No details available.
+            </Text>
+          ) : inspectPayload.lived ? (
+            <Stack gap="sm">
+              <Text size="sm">
+                <Text span fw={700} inherit>
+                  Past cohort
+                </Text>{' '}
+                ({inspectPayload.ordinal.toLocaleString()} of {totalMonths.toLocaleString()} months from your birth-month start)
+              </Text>
+              <Text size="sm" c="dimmed">
+                This is dot {inspectPayload.ordinal.toLocaleString()} of {inspectPayload.livedTotal.toLocaleString()} white lived months up to today. Pin &quot;Past&quot; or hover any lived dot to dim the rest.
+              </Text>
+              {jumpTargetIndex !== null && (
+                <Button
+                  variant="light"
+                  size="compact-sm"
+                  onClick={() => {
+                    const j = jumpTargetIndex
+                    setInspectIndex(null)
+                    queueMicrotask(() => scrollToDotIndex(j))
+                  }}
+                >
+                  Scroll to this month (&quot;now&quot;) in grid
+                </Button>
+              )}
+            </Stack>
+          ) : inspectPayload.focus ? (
+            <Stack gap="sm">
+              <Group gap="sm" wrap="nowrap" align="center">
+                <ColorSwatch size={18} color={inspectPayload.focus.color} withShadow style={{ flexShrink: 0 }} />
+                <Text size="sm" fw={700} style={{ flex: 1, minWidth: 0 }}>
+                  {inspectPayload.focus.label}
+                  {inspectPayload.focus.key === HANGOVER_TOPIC.key ? ' · estimate' : ''}
+                </Text>
+              </Group>
+              <Text size="sm" c="dimmed">
+                Chronological dot {inspectPayload.ordinal.toLocaleString()} of {totalMonths.toLocaleString()} in this 90-year grid — the{' '}
+                {inspectPayload.futureOrdinal.toLocaleString()} upcoming month-dot after today (there are{' '}
+                {inspectPayload.remainingTotal.toLocaleString()} future dots in total).
+              </Text>
+              <Text size="sm" c="dimmed">
+                {monthsInRunSummary(inspectPayload.monthsInRun)}
+              </Text>
+              {jumpTargetIndex !== null && (
+                <Button
+                  variant="light"
+                  size="compact-sm"
+                  onClick={() => {
+                    const j = jumpTargetIndex
+                    setInspectIndex(null)
+                    queueMicrotask(() => scrollToDotIndex(j))
+                  }}
+                >
+                  Scroll to today&apos;s month in grid
+                </Button>
+              )}
+            </Stack>
+          ) : (
+            <Text size="sm" c="dimmed">
+              This month sits in the horizon but couldn&apos;t be assigned a cohort (try adjusting hangover overlay or refreshing).
+            </Text>
+          )}
+        </Modal>
       </Stack>
     </Container>
   )
